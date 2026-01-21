@@ -3,22 +3,37 @@
 LOGFILE="logs/access.log"
 
 if [[ ! -f "$LOGFILE" ]]; then
-    echo "Error: log file not found: $LOGFILE" >&2
+    echo "Error: log file not found" >&2
     exit 1
 fi
 
-# Общее число запросов
+# Считаем статистику
 total=$(wc -l < "$LOGFILE")
-
-# Число ответов 200
-# В нашем логе: последнее поле — это код (например, 200)
 ok=$(awk '{if ($NF == "200") c++} END {print c+0}' "$LOGFILE")
 
-# ТОП-3 IP
-top_ips=$(awk '{print $1}' "$LOGFILE" | sort | uniq -c | sort -nr | head -3 | awk '{print $2}')
+# Собираем IP -> count
+declare -A ip_counts
+while IFS= read -r line; do
+    ip=$(echo "$line" | awk '{print $1}')
+    if [[ -n "$ip" ]]; then
+        ((ip_counts["$ip"]++))
+    fi
+done < "$LOGFILE"
 
-# Вывод
+# Вывод в stdout
 echo "Total requests: $total"
 echo "200 responses: $ok"
 echo "Top 3 IPs:"
-echo "$top_ips"
+printf '%s\n' "${!ip_counts[@]}" | sort | head -3
+
+# === Запись в PostgreSQL ===
+# Очищаем старые данные
+psql -d devops_test -c "DELETE FROM log_stats;" >/dev/null 2>&1
+
+# Вставляем новые
+for ip in "${!ip_counts[@]}"; do
+    count=${ip_counts[$ip]}
+    psql -d devops_test -c "INSERT INTO log_stats (ip, requests_count) VALUES ('$ip', $count);" >/dev/null 2>&1
+done
+
+exit 0
