@@ -1,9 +1,12 @@
 #!/bin/bash
 
-LOGFILE="logs/access.log"
+# Определяем директорию, где лежит сам скрипт
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOGFILE="$SCRIPT_DIR/../logs/access.log"
 
+# Проверка существования лога
 if [[ ! -f "$LOGFILE" ]]; then
-    echo "Error: log file not found" >&2
+    echo "Error: log file not found: $LOGFILE" >&2
     exit 1
 fi
 
@@ -26,11 +29,8 @@ echo "200 responses: $ok"
 echo "Top 3 IPs:"
 printf '%s\n' "${!ip_counts[@]}" | sort | head -3
 
-# === Запись в PostgreSQL ===
-# Очищаем старые данные
+# Запись в БД
 psql -d devops_test -c "DELETE FROM log_stats;" >/dev/null 2>&1
-
-# Вставляем новые
 for ip in "${!ip_counts[@]}"; do
     count=${ip_counts[$ip]}
     psql -d devops_test -c "INSERT INTO log_stats (ip, requests_count) VALUES ('$ip', $count);" >/dev/null 2>&1
